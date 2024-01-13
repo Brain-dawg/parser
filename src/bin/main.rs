@@ -20,6 +20,9 @@ struct JsonDemo {
     state: MatchState,
 }
 
+use std::fs::File;
+use std::io::Write;
+
 fn main() -> Result<(), MainError> {
     #[cfg(feature = "better_panic")]
     better_panic::install();
@@ -38,8 +41,10 @@ fn main() -> Result<(), MainError> {
     let file = fs::read(path)?;
     let demo = Demo::new(&file);
 
+    // Create a new file to write the output
+    let mut output_file = File::create("output.json")?;
+
     if !detailed_summaries {
-        // Use the default (simple) analyzer to track kills, assists, and deaths
         let parser = if all {
             DemoParser::new_all(demo.get_stream())
         } else {
@@ -47,32 +52,35 @@ fn main() -> Result<(), MainError> {
         };
         let (header, state) = parser.parse()?;
         let demo = JsonDemo { header, state };
-        println!("{}", serde_json::to_string(&demo)?);
+
+        // Write the JSON to the file instead of printing it
+        write!(output_file, "{}", serde_json::to_string(&demo)?)?;
     } else {
         let parser = DemoParser::new_with_analyser(demo.get_stream(), PlayerSummaryAnalyzer::new());
         let (header, state) = parser.parse()?;
 
-        println!("{:?}", header);
+        // Write the header to the file
+        write!(output_file, "{:?}", header)?;
 
         let table_header = "Player                           | Points     | Kills      | Deaths     | Assists    | Destruction | Captures   | Defenses   | Domination | Revenge    | Ubers      | Headshots  | Teleports  | Healing    | Backstabs  | Bonus      | Support    | Damage Dealt";
         let divider      = "---------------------------------|------------|------------|------------|------------|-------------|------------|------------|------------|------------|------------|------------|------------|------------|------------|------------|------------|-------------";
-        println!("{}", table_header);
-        println!("{}", divider);
+
+        // Write the table header and divider to the file
+        write!(output_file, "{}\n{}", table_header, divider)?;
 
         for (user_id, user_data) in state.users {
             let player_name = user_data.name;
             if let Some(s) = state.player_summaries.get(&user_id) {
                 let (color_code_start, color_code_end) = if player_name == header.nick {
-                    // Give the line for the player a green background with white text
-                    // ANSI color codes are in hex, since rust doesn't support octal literals in strings
-                    // See: https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
                     ("\x1b[1;42;37m", "\x1b[0m")
                 } else {
                     ("", "")
                 };
 
-                println!(
-                    "{}{:32} | {:10} | {:10} | {:10} | {:10} | {:11} | {:10} | {:10} | {:10} | {:10} | {:10} | {:10} | {:10} | {:10} | {:10} | {:10} | {:10} | {:12}{}",
+                // Write the player data to the file
+                write!(
+                    output_file,
+                    "{}{:32} | {:10} | {:10} | {:10} | {:10} | {:11} | {:10} | {:10} | {:10} | {:10} | {:10} | {:10} | {:10} | {:10} | {:10} | {:10} | {:10} | {:12}{}\n",
                     color_code_start,
 
                     player_name,
@@ -95,7 +103,7 @@ fn main() -> Result<(), MainError> {
                     s.damage_dealt,
 
                     color_code_end,
-                );
+                )?;
             }
         }
     }
