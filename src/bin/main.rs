@@ -39,7 +39,7 @@ fn main() -> Result<(), MainError> {
     let path = args[1].clone();
     let all = args.contains(&std::string::String::from("all"));
     // let detailed_summaries = args.contains(&std::string::String::from("detailed_summaries")); //removed
-    let file = fs::read(path)?;
+    // let file = fs::read(path)?;
     // let demo = Demo::new(&file);
     // Get an iterator over the entries in the current directory
     let entries = fs::read_dir(".").unwrap();
@@ -55,6 +55,9 @@ fn main() -> Result<(), MainError> {
             
             // Loop through each file in the archive
             for i in 0..archive.len() {
+
+                if path.with_extension("json").exists() { continue; }
+
                 // Get the ZipFile by index
                 let mut zip_file = archive.by_index(i).unwrap();
                 
