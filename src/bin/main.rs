@@ -5,7 +5,7 @@ use main_error::MainError;
 use serde::{Deserialize, Serialize};
 use tf_demo_parser::demo::header::Header;
 use tf_demo_parser::demo::parser::analyser::MatchState;
-use tf_demo_parser::demo::parser::player_summary_analyzer::PlayerSummaryAnalyzer;
+// use tf_demo_parser::demo::parser::player_summary_analyzer::PlayerSummaryAnalyzer;
 pub use tf_demo_parser::{Demo, DemoParser, Parse, ParseError, ParserState, Stream};
 
 #[cfg(feature = "jemallocator")]
@@ -36,7 +36,7 @@ fn main() -> Result<(), MainError> {
         println!("1 argument required");
         return Ok(());
     }
-    let path = args[1].clone();
+    // let path = args[1].clone();
     let all = args.contains(&std::string::String::from("all"));
     // let detailed_summaries = args.contains(&std::string::String::from("detailed_summaries")); //removed
     // let file = fs::read(path)?;
@@ -52,7 +52,7 @@ fn main() -> Result<(), MainError> {
             // Open the file as a ZipArchive
             let file = fs::File::open(&path).unwrap();
             let mut archive = ZipArchive::new(file).unwrap();
-            
+
             // Loop through each file in the archive
             for i in 0..archive.len() {
 
@@ -60,13 +60,13 @@ fn main() -> Result<(), MainError> {
 
                 // Get the ZipFile by index
                 let mut zip_file = archive.by_index(i).unwrap();
-                
+
                 // Create a Vec<u8> to store the contents
                 let mut contents = Vec::new();
-                
+
                 // Read the contents to the Vec<u8>
                 zip_file.read_to_end(&mut contents).unwrap();
-                
+
                 // Create a .dem file with the same name as the zip file
                 let dem_path = path.with_extension("dem");
                 let mut dem_file = fs::File::create(&dem_path).unwrap();
@@ -90,7 +90,7 @@ fn main() -> Result<(), MainError> {
                 let json_demo = JsonDemo { header, state };
 
                 // Write the JSON output to the file
-                write!(output_file, "{}", serde_json::to_string(&json_demo)?)?;
+                write!(output_file, "[{}]", serde_json::to_string(&json_demo)?)?;
 
                 // File written, delete extracted demo file
                 fs::remove_file(&dem_path)?;
