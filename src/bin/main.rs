@@ -20,11 +20,14 @@ struct JsonDemo {
     state: MatchState,
 }
 
-use std::fs::File;
 use std::io::Write;
 use std::io::Read;
+use std::fs::File;
 use zip::ZipArchive;
-fn main() -> Result<(), MainError> {
+use std::thread;
+use std::time::Duration;
+
+fn batchparse() -> Result<(), MainError> {
     #[cfg(feature = "better_panic")]
     better_panic::install();
 
@@ -32,10 +35,11 @@ fn main() -> Result<(), MainError> {
     tracing_subscriber::fmt::init();
 
     let args: Vec<_> = env::args().collect();
-    if args.len() < 2 {
-        println!("1 argument required");
-        return Ok(());
-    }
+    //args removed, just parse everything in the current directory
+    // if args.len() < 2 {
+    //     println!("1 argument required");
+    //     return Ok(());
+    // }
     // let path = args[1].clone();
     let all = args.contains(&std::string::String::from("all"));
     // let detailed_summaries = args.contains(&std::string::String::from("detailed_summaries")); //removed
@@ -89,6 +93,9 @@ fn main() -> Result<(), MainError> {
                 let (header, state) = parser.parse()?;
                 let json_demo = JsonDemo { header, state };
 
+                let file_stem = path.file_stem().and_then(|s| s.to_str());
+                println!("Writing {}", file_stem.unwrap_or("Unknown"));
+
                 // Write the JSON output to the file
                 write!(output_file, "[{}]", serde_json::to_string(&json_demo)?)?;
 
@@ -98,4 +105,11 @@ fn main() -> Result<(), MainError> {
         }
     }
     Ok(())
+}
+
+fn main() -> Result<(), MainError> {
+    loop {
+        let _ = batchparse();
+        thread::sleep(Duration::from_secs(5));
+    }
 }
