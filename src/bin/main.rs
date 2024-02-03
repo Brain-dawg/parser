@@ -23,11 +23,9 @@ struct JsonDemo {
 use std::io::Write;
 use std::io::Read;
 use std::fs::File;
-use std::path::Path;
 use zip::ZipArchive;
 use std::thread;
 use std::time::Duration;
-use serde_json::json;
 
 fn batchparse() -> Result<(), MainError> {
     #[cfg(feature = "better_panic")]
@@ -48,7 +46,6 @@ fn batchparse() -> Result<(), MainError> {
     // let file = fs::read(path)?;
     // let demo = Demo::new(&file);
     // Get an iterator over the entries in the current directory
-    let mut filenames = Vec::new();
     let entries = fs::read_dir(".").unwrap();
     for entry in entries {
         // Get the path of the entry
@@ -62,13 +59,6 @@ fn batchparse() -> Result<(), MainError> {
 
             // Loop through each file in the archive
             for i in 0..archive.len() {
-
-                // Get the filename and store it in the vector
-                if let Some(filename) = path.file_name().and_then(|s| s.to_str()) {
-                    let filename = filename.to_string();
-                    let filename = filename.replace(".zip", ".json");
-                    filenames.push(filename);
-                }
 
                 if path.with_extension("json").exists() { continue; }
 
@@ -104,7 +94,7 @@ fn batchparse() -> Result<(), MainError> {
                 let json_demo = JsonDemo { header, state };
 
                 let file_stem = path.file_stem().and_then(|s| s.to_str());
-                println!("Writing JSON for {}", file_stem.unwrap_or("Unknown"));
+                println!("Writing {}", file_stem.unwrap_or("Unknown"));
 
                 // Write the JSON output to the file
                 write!(output_file, "[{}]", serde_json::to_string(&json_demo)?)?;
@@ -114,9 +104,6 @@ fn batchparse() -> Result<(), MainError> {
             }
         }
     }
-    let parsed_file = Path::new("parsed.json");
-    let mut file = File::create(&parsed_file)?;
-    file.write_all(json!(&filenames).to_string().as_bytes())?;
     Ok(())
 }
 
