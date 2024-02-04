@@ -76,6 +76,10 @@ impl UserInfo {
             // extra decode step to gracefully handle malformed utf8 names
             let raw_info: RawPlayerInfo = data.read()?;
 
+            if raw_info.steam_id.trim() == "BOT" {
+                return Ok(None);
+            }
+            
             match text
                 .map(|text| text.parse::<u32>().map(|id| (id + 1).into()))
                 .unwrap_or_else(|| Ok((index as u32 + 1).into()))

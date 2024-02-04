@@ -459,7 +459,7 @@ impl Analyser {
         const WIN_REASON_TIME_LIMIT: u8 = 6;
 
         match event {
-            GameEvent::PlayerDeath(event) => self.state.deaths.push(Death::from_event(event, tick)),
+            // GameEvent::PlayerDeath(event) => self.state.deaths.push(Death::from_event(event, tick)),
             GameEvent::PlayerSpawn(event) => {
                 let spawn = Spawn::from_event(event, tick);
                 if let Some(user_state) = self.state.users.get_mut(&spawn.user) {
@@ -503,7 +503,7 @@ impl Analyser {
 pub struct MatchState {
     pub chat: Vec<ChatMessage>,
     pub users: BTreeMap<UserId, UserInfo>,
-    pub deaths: Vec<Death>,
+    // pub deaths: Vec<Death>,
     pub rounds: Vec<Round>,
     pub start_tick: ServerTick,
     pub interval_per_tick: f32,
