@@ -14,15 +14,17 @@ static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct JsonDemo {
-    filename: String,
-    header: Header,
+    header: HeaderWithFilename,
     #[serde(flatten)]
     state: MatchState,
 }
 
 #[derive(Serialize, Deserialize)]
-struct Data {
-    data: Vec<JsonDemo>,
+#[serde(rename_all = "camelCase")]
+struct HeaderWithFilename {
+    filename: String,
+    #[serde(flatten)]
+    header: Header,
 }
 
 use std::io::Write;
@@ -41,10 +43,16 @@ fn batchparse() -> Result<(), MainError> {
 
     let args: Vec<_> = env::args().collect();
     let all = args.contains(&std::string::String::from("all"));
+
     let entries = fs::read_dir(".").unwrap();
 
-    let mut output_file = File::create("output.json")?;
-    let mut data = Vec::new();
+    // Create a new JSON file to write the output
+    let mut output_file = File::create("all_demos.json")?;
+
+    // Start the JSON array
+    write!(output_file, "[")?;
+
+    let mut first = true;
 
     for entry in entries {
         let path = match entry {
@@ -147,8 +155,8 @@ fn batchparse() -> Result<(), MainError> {
         }
     }    
 
-    let data = Data { data };
-    write!(output_file, "{}\n", serde_json::to_string(&data)?)?;
+    // End the JSON array
+    write!(output_file, "]")?;
 
     Ok(())
 }
