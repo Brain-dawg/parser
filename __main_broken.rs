@@ -1,3 +1,5 @@
+
+#![cfg(target_os = "linux")]
 use std::env;
 use std::fs;
 
@@ -22,23 +24,20 @@ struct JsonDemo {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct HeaderWithFilename {
-    filename: String,
+    filename: Option<String>,
     #[serde(flatten)]
     header: Header,
 }
 
 use std::io::Write;
 use std::io::Read;
-// use std::fs::File;
+use std::fs::File;
 use zip::ZipArchive;
 use std::thread;
 use std::time::Duration;
 use std::collections::HashSet;
-// use std::collections::HashMap;
-use std::fs::OpenOptions;
-use std::path::Path;
 
-fn batchparse(processed_files: &mut HashSet<String>) -> Result<(), MainError> {
+fn batchparse() -> Result<(), MainError> {
     #[cfg(feature = "better_panic")]
     better_panic::install();
 
@@ -50,22 +49,14 @@ fn batchparse(processed_files: &mut HashSet<String>) -> Result<(), MainError> {
 
     let entries = fs::read_dir(".").unwrap();
 
-    let file_path = "all_demos.json";
-    let file_exists = Path::new(file_path).exists();
+    let mut output_file = File::create("all_demos.json")?;
 
-    let mut output_file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .append(file_exists)
-        .open(file_path)?;
-
-    if !file_exists {
-        write!(output_file, "[")?;
-    }
+    write!(output_file, "[")?;
 
     let mut first = true;
 
-    
+    let mut written_files = HashSet::new();
+
     for entry in entries {
         let path = match entry {
             Ok(entry) => entry.path(),
@@ -138,14 +129,16 @@ fn batchparse(processed_files: &mut HashSet<String>) -> Result<(), MainError> {
                         continue;
                     }
                 };
-                let file_stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("Unknown");
+                let file_stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("Unknown").to_string();
+                let json_demo = JsonDemo { header: HeaderWithFilename { filename: Some(file_stem.clone()), header }, state };
     
-                let json_demo = JsonDemo { header: HeaderWithFilename { filename: file_stem.to_string(), header }, state };
 
-                if !processed_files.contains(&json_demo.header.filename) {
-                    let _ = write!(output_file, "{{\"data\": {}}}", serde_json::to_string(&json_demo).unwrap());
-                    println!("Writing file: {:?}", file_stem.to_string());
+                if written_files.contains(&file_stem) {
+                    println!("File already written: {:?}", dem_path);
+                    continue;
                 }
+
+                written_files.insert(file_stem.clone());
                 
                 if !first {
                     if let Err(_) = write!(output_file, ",") {
@@ -154,7 +147,10 @@ fn batchparse(processed_files: &mut HashSet<String>) -> Result<(), MainError> {
                     }
                 }
     
-                processed_files.insert(json_demo.header.filename);
+                if let Err(_) = write!(output_file, "{{\"data\": {}}}", serde_json::to_string(&json_demo).unwrap()) {
+                    println!("Failed to write JSON to output file");
+                    continue;
+                }
     
                 first = false;
     
@@ -162,20 +158,18 @@ fn batchparse(processed_files: &mut HashSet<String>) -> Result<(), MainError> {
                     println!("Failed to remove .dem file: {:?}", dem_path);
                 }
             }
-            
         }
     }    
 
+    // End the JSON array
     write!(output_file, "]")?;
 
     Ok(())
 }
 
-fn main() -> Result<(), MainError> {   
-
-    let mut processed_files = HashSet::new();  // Declare HashSet outside of the loop
+fn main() -> Result<(), MainError> {
     loop {
-        batchparse(&mut processed_files)?;
+        let _ = batchparse();
         thread::sleep(Duration::from_secs(5));
     }
 }
