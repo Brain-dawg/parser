@@ -145,12 +145,11 @@ fn batchparse(processed_files: &mut HashSet<String>) -> Result<(), MainError> {
                 if !processed_files.contains(&json_demo.header.filename) {
                     let _ = write!(output_file, "{{\"data\": {}}}", serde_json::to_string(&json_demo).unwrap());
                     println!("Writing file: {:?}", file_stem.to_string());
-                }
-                
-                if !first {
-                    if let Err(_) = write!(output_file, ",") {
-                        println!("Failed to write to output file");
-                        continue;
+                    if !first {
+                        if let Err(_) = write!(output_file, ",") {
+                            println!("Failed to write to output file");
+                            continue;
+                        }
                     }
                 }
     
