@@ -40,7 +40,7 @@ fn batchparse(processed_files: &mut HashSet<String>) -> Result<(), MainError> {
     let args: Vec<_> = env::args().collect();
     let all = args.contains(&std::string::String::from("all"));
     let entries = fs::read_dir(".")?;
-    let file_path = "all_demos.json";
+    let file_path = "all_demos_new.json";
     let mut output_file = File::create(file_path)?;
     write!(output_file, "[")?;
 
@@ -128,7 +128,6 @@ fn batchparse(processed_files: &mut HashSet<String>) -> Result<(), MainError> {
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
         .as_secs();
-    
     // Specify the directory where the zip file will be saved
     let parsed_old_dir = PathBuf::from("parsed_old");
     fs::create_dir_all(&parsed_old_dir)?; // Create the directory if it doesn't exist
