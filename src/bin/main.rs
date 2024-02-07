@@ -9,7 +9,6 @@ use zip::write::FileOptions;
 use zip::CompressionMethod;
 // use flate2::Compression;
 use std::collections::HashSet;
-use std::fs::rename;
 use std::fs::remove_file;
 use std::path::PathBuf;
 // use std::thread;
@@ -146,9 +145,14 @@ fn batchparse(processed_files: &mut HashSet<String>) -> Result<(), MainError> {
     let mut all_demos = fs::File::open("all_demos.json")?;
     io::copy(&mut all_demos, &mut zip_writer)?;
     zip_writer.finish()?;
+    // Close the zip file
+    drop(zip_writer);
+
+    // Remove the old JSON file
+    fs::remove_file("all_demos.json")?;
 
     // Overwrite old JSON file with new data
-    rename("all_demos_new.json", "all_demos.json")?;
+    fs::rename(file_path, "all_demos.json")?;
 
     Ok(())
 }
