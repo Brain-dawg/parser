@@ -10,7 +10,7 @@ use zip::CompressionMethod;
 // use flate2::Compression;
 use std::collections::HashSet;
 use std::fs::remove_file;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 // use std::thread;
 use std::time::SystemTime;
 use main_error::MainError;
@@ -145,11 +145,15 @@ fn batchparse(processed_files: &mut HashSet<String>) -> Result<(), MainError> {
     let mut all_demos = fs::File::open("all_demos.json")?;
     io::copy(&mut all_demos, &mut zip_writer)?;
     zip_writer.finish()?;
+
     // Close the zip file
     drop(zip_writer);
 
     // Remove the old JSON file
-    fs::remove_file("all_demos.json")?;
+    if let Err(err_) = fs::remove_file("all_demos.json")
+    {
+        println!("{:?}", err_)
+    }
 
     // Overwrite old JSON file with new data
     fs::rename(file_path, "all_demos.json")?;
@@ -158,6 +162,8 @@ fn batchparse(processed_files: &mut HashSet<String>) -> Result<(), MainError> {
 }
 
 fn main() -> Result<(), MainError> {
+    let new_dir = Path::new("/var/tf2server/tf/demos");
+    env::set_current_dir(&new_dir).unwrap();
     let mut processed_files = HashSet::new();
     batchparse(&mut processed_files)?;
     Ok(())
