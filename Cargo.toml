@@ -30,6 +30,9 @@ name = "schema"
 path = "src/bin/schema.rs"
 required-features = ["schema"]
 
+[target.x86_64-unknown-linux-musl]
+rustflags = ["-C", "target-feature=+crt-static"]
+
 [dependencies]
 bitbuffer = { version = "0.10.9", features = ["serde"] }
 num_enum = "0.7.1"
