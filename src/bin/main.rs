@@ -9,7 +9,7 @@ use zip::write::FileOptions;
 use zip::CompressionMethod;
 // use flate2::Compression;
 use std::collections::HashSet;
-use std::fs::remove_file;
+use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 // use std::thread;
 use std::time::SystemTime;
@@ -113,7 +113,7 @@ fn batchparse(processed_files: &mut HashSet<String>) -> Result<(), MainError> {
 
                 processed_files.insert(json_demo.header.filename);
 
-                if let Err(_) = remove_file(&dem_path) {
+                if let Err(_) = fs::remove_file(&dem_path) {
                     continue;
                 }
             }
@@ -164,6 +164,12 @@ fn batchparse(processed_files: &mut HashSet<String>) -> Result<(), MainError> {
 fn main() -> Result<(), MainError> {
     let new_dir = Path::new("/var/tf2server/tf/demos");
     env::set_current_dir(&new_dir).unwrap();
+
+    let path = Path::new("all_demos.json");
+    if !path.exists() {
+        OpenOptions::new().write(true).create_new(true).open(path)?;
+    }
+
     let mut processed_files = HashSet::new();
     batchparse(&mut processed_files)?;
     Ok(())
