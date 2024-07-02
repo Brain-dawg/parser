@@ -162,7 +162,7 @@ fn batchparse(processed_files: &mut HashSet<String>) -> Result<(), MainError> {
 }
 
 fn main() -> Result<(), MainError> {
-    let new_dir = Path::new("/var/tf2server/tf/demos");
+    let new_dir = Path::new("D:/parser/target/release/demos");
     env::set_current_dir(&new_dir).unwrap();
 
     let path = Path::new("all_demos.json");
