@@ -18,6 +18,31 @@ use serde::{Deserialize, Serialize};
 use tf_demo_parser::demo::header::Header;
 use tf_demo_parser::demo::parser::analyser::MatchState;
 use tf_demo_parser::{Demo, DemoParser};
+use mysql::*;
+// use mysql::prelude::*;
+
+
+fn db_connect() -> Result<Pool, Box<dyn std::error::Error>> {
+    
+    // Database connection constants
+    const DB_HOST: &str = "localhost";
+    const DB_PORT: u16 = 3306;
+    const DB_USER: &str = "root";
+    const DB_PASS: &str = "";
+    const DB_NAME: &str = "demo_data";
+
+    let opts = OptsBuilder::new()
+        .ip_or_hostname(Some(DB_HOST))
+        .tcp_port(DB_PORT)
+        .user(Some(DB_USER))
+        .pass(Some(DB_PASS))
+        .db_name(Some(DB_NAME));
+
+    let pool = Pool::new(opts)?;
+
+    Ok(pool)
+}
+
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -29,10 +54,98 @@ struct JsonDemo {
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct JsonDemoNoNesting {
+    filename: String,
+    header: Header,
+    #[serde(flatten)]
+    state: MatchState,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct HeaderWithFilename {
     filename: String,
     #[serde(flatten)]
     header: Header,
+}
+
+fn batchparse_database() -> Result<(), MainError> {
+
+    let args: Vec<_> = env::args().collect();
+    let all = args.contains(&std::string::String::from("all"));
+    let entries = fs::read_dir(".")?;
+
+    for entry in entries {
+        let path = match entry {
+            Ok(entry) => entry.path(),
+            Err(_) => continue,
+        };
+
+        if path.is_file() && path.extension().unwrap_or_default() == "zip" {
+            let file = match fs::File::open(&path) {
+                Ok(file) => file,
+                Err(_) => continue,
+            };
+            let mut archive = match zip::ZipArchive::new(file) {
+                Ok(archive) => archive,
+                Err(_) => continue,
+            };
+
+            for i in 0..archive.len() {
+                if path.with_extension("json").exists() {
+                    continue;
+                }
+
+                let mut zip_file = match archive.by_index(i) {
+                    Ok(file) => file,
+                    Err(_) => continue,
+                };
+
+                let mut contents = Vec::new();
+                if let Err(_) = zip_file.read_to_end(&mut contents) {
+                    continue;
+                }
+
+                let dem_path = path.with_extension("dem");
+                let mut dem_file = match fs::File::create(&dem_path) {
+                    Ok(file) => file,
+                    Err(_) => continue,
+                };
+                if let Err(_) = dem_file.write_all(&contents) {
+                    continue;
+                }
+
+                let demo_file_contents = match fs::read(&dem_path) {
+                    Ok(contents) => contents,
+                    Err(_) => continue,
+                };
+                let demo = Demo::new(&demo_file_contents);
+
+                let parser = if all {
+                    DemoParser::new_all(demo.get_stream())
+                } else {
+                    DemoParser::new(demo.get_stream())
+                };
+                let (header, state) = match parser.parse() {
+                    Ok((header, state)) => (header, state),
+                    Err(_) => continue,
+                };
+                let file_stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("Unknown");
+
+                let json_demo = JsonDemoNoNesting { filename: file_stem.to_string(), header, state };
+
+                let json_data = serde_json::to_string(&json_demo)?;
+                println!("Adding to hashmap: {:?}", &json_data);
+
+                // processed_files.insert(json_demo.header.filename);
+
+                if let Err(_) = fs::remove_file(&dem_path) {
+                    continue;
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn batchparse(processed_files: &mut HashSet<String>) -> Result<(), MainError> {
@@ -170,7 +283,8 @@ fn main() -> Result<(), MainError> {
         OpenOptions::new().write(true).create_new(true).open(path)?;
     }
 
-    let mut processed_files = HashSet::new();
-    batchparse(&mut processed_files)?;
+    // let mut processed_files = HashSet::new();
+    // batchparse(&mut processed_files)?;
+    batchparse_database()?;
     Ok(())
 }
