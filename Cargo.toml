@@ -59,7 +59,7 @@ rayon = "1.5"
 # flate2 = "1.0"
 # chrono = "0.4.19"
 mysql = "25.0.1"
-
+regex = "1.10.2"
 [features]
 schema = ["schemars", "bitbuffer/schemars"]
 trace = ["tracing", "tracing-subscriber"]
