@@ -22,25 +22,74 @@ use mysql::*;
 use mysql::prelude::*;
 // Import regex crate
 use regex::Regex;
+use dotenv::dotenv;
+use md5;
 
+// #[cfg(target_os = "linux")]
+// const IS_LINUX: bool = true;
+
+// #[cfg(not(target_os = "linux"))]
+// const IS_LINUX: bool = false;
 
 const DB_TABLE_NAME: &str = "demo_data";
+const DB_CHAT_TABLE_NAME: &str = "demo_chat";
 
 fn db_connect() -> Result<Pool, Box<dyn std::error::Error>> {
+    let current_dir = env::current_dir().expect("Failed to get current directory");
+    println!("Current directory: {:?}", current_dir);
 
-    // Database connection constants
-    const DB_HOST: &str = "";
-    const DB_PORT: u16 = ;
-    const DB_USER: &str = "";
-    const DB_PASS: &str = "";
-    const DB_NAME: &str = "";
+    let env_path = current_dir.join("..").join("..").join(".env");
+    println!("Attempting to read .env file from: {:?}", env_path);
+
+    let env_content = match fs::read_to_string(&env_path) {
+        Ok(content) => content,
+        Err(e) => {
+            eprintln!("Failed to read .env file: {}", e);
+            eprintln!("Searched for .env file at: {:?}", env_path);
+            eprintln!("Current directory contents:");
+            if let Ok(entries) = fs::read_dir(current_dir) {
+                for entry in entries {
+                    if let Ok(entry) = entry {
+                        println!("  {:?}", entry.path());
+                    }
+                }
+            }
+            return Err(Box::new(e));
+        }
+    };
+    
+    let db_host = env_content.lines()
+        .find(|line| line.starts_with("DB_HOST="))
+        .and_then(|line| line.split('=').nth(1))
+        .expect("DB_HOST not found in .env file");
+    
+    let db_port: u16 = env_content.lines()
+        .find(|line| line.starts_with("DB_PORT="))
+        .and_then(|line| line.split('=').nth(1))
+        .and_then(|port| port.parse().ok())
+        .expect("DB_PORT not found or invalid in .env file");
+    
+    let db_user = env_content.lines()
+        .find(|line| line.starts_with("DB_USER="))
+        .and_then(|line| line.split('=').nth(1))
+        .expect("DB_USER not found in .env file");
+    
+    let db_pass = env_content.lines()
+        .find(|line| line.starts_with("DB_PASS="))
+        .and_then(|line| line.split('=').nth(1))
+        .expect("DB_PASS not found in .env file");
+    
+    let db_name = env_content.lines()
+        .find(|line| line.starts_with("DB_NAME="))
+        .and_then(|line| line.split('=').nth(1))
+        .expect("DB_NAME not found in .env file");
 
     let opts = OptsBuilder::new()
-        .ip_or_hostname(Some(DB_HOST))
-        .tcp_port(DB_PORT)
-        .user(Some(DB_USER))
-        .pass(Some(DB_PASS))
-        .db_name(Some(DB_NAME));
+        .ip_or_hostname(Some(db_host))
+        .tcp_port(db_port)
+        .user(Some(db_user))
+        .pass(Some(db_pass))
+        .db_name(Some(db_name));
 
     let pool = Pool::new(opts)?;
 
@@ -163,11 +212,15 @@ fn batchparse_database() -> Result<(), MainError> {
                             let mut query_params = Vec::new();
                             
                             let mut filename = String::new();
+                            let mut filename_hash = String::new();
 
                             if obj.contains_key("filename") {
+                                
                                 filename = obj.get("filename").unwrap().as_str().unwrap().to_string();
+                                filename_hash = format!("{:x}", md5::compute(&filename));
                             }
 
+                            let filename_hash_clone = filename_hash.clone();
                             for (key, val) in obj {
 
                                 if key == "header" {
@@ -187,47 +240,62 @@ fn batchparse_database() -> Result<(), MainError> {
                                             if let Some(obj) = chat_entry.as_object() {
 
                                                 let mut chat_values = Vec::new();
-                                                let columns = ["from", "kind", "text", "tick"];
+                                                let columns = ["tick", "from", "kind", "text", "filename", "filename_hash", "text_hash"];
+                                                let placeholders: Vec<String> = (1..=columns.len()).map(|_| "?".to_string()).collect();
                                                 
-                                                for &column in &columns {
+                                                let mut text_hash = String::new();
 
-                                                    let value = match obj.get(column) {
-
-                                                        Some(serde_json::Value::String(s)) => Value::from(s.clone()),
-                                                        
-                                                        Some(serde_json::Value::Number(n)) if column == "tick" => {
-
-                                                            if let Some(i) = n.as_i64() {
-                                                                Value::from(i)
-                                                            } else {
-                                                                Value::from(0)
+                                                for &column in columns.iter() {
+                                                    let value = match column {
+                                                        "filename" => Value::from(filename.clone()),
+                                                        "filename_hash" => Value::from(filename_hash_clone.clone()),
+                                                        "text_hash" => {
+                                                            if text_hash.is_empty() {
+                                                                if let Some(text) = obj.get("text").and_then(|v| v.as_str()) {
+                                                                    text_hash = format!("{:x}", md5::compute(text));
+                                                                }
                                                             }
+                                                            Value::from(text_hash.clone())
                                                         },
-                                                        _ => Value::NULL,
+                                                        _ => match obj.get(column) {
+                                                            Some(serde_json::Value::String(s)) => Value::from(s.clone()),
+                                                            Some(serde_json::Value::Number(n)) if column == "tick" => {
+                                                                if let Some(i) = n.as_i64() {
+                                                                    Value::from(i)
+                                                                } else {
+                                                                    Value::from(0)
+                                                                }
+                                                            },
+                                                            _ => Value::NULL,
+                                                        },
                                                     };
                                                     chat_values.push(value);
                                                 }
 
-                                                chat_values.push(Value::from(filename.clone()));
-
+                                                let columns_str = columns.iter().map(|c| format!("`{}`", c)).collect::<Vec<String>>();
                                                 let chat_query = format!(
-                                                    "INSERT INTO demo_chat (`from`, `kind`, `text`, `tick`, `filename`) 
-                                                    SELECT ?, ?, ?, ?, ?
+                                                    "INSERT INTO {} ({}) 
+                                                    SELECT {}
+                                                    FROM DUAL
                                                     WHERE NOT EXISTS (
-                                                        SELECT 1 FROM demo_chat 
-                                                        WHERE `from` = ? AND `kind` = ? AND `text` = ? AND `tick` = ? AND `filename` = ?
-                                                    )"
+                                                        SELECT 1 FROM {}
+                                                        WHERE {}
+                                                    )",
+                                                    DB_CHAT_TABLE_NAME,
+                                                    columns_str.join(", "),
+                                                    placeholders.join(", "),
+                                                    DB_CHAT_TABLE_NAME,
+                                                    columns_str.iter().map(|c| format!("{} = ?", c)).collect::<Vec<String>>().join(" AND ")
                                                 );
 
-                                                // Duplicate the values for the WHERE clause
-                                                let mut query_values = chat_values.clone();
-                                                query_values.extend_from_slice(&chat_values);
+                                                let chat_values_copy = chat_values.clone();
+                                                chat_values.extend(chat_values_copy);
 
                                                 // Get a connection from the pool
                                                 if let Ok(mut conn) = pool.get_conn() {
                                                     // Execute the query
-                                                    match conn.exec_drop(chat_query, query_values) {
-                                                        Ok(_) => println!("Successfully processed chat data for file: {}", filename),
+                                                    match conn.exec_drop(chat_query, chat_values.clone()) {
+                                                        Ok(_) => (),
                                                         Err(e) => eprintln!("Error processing chat data for file {}: {}", filename, e),
                                                     }
                                                 } else {
@@ -237,13 +305,16 @@ fn batchparse_database() -> Result<(), MainError> {
                                         }
                                     }
                                 }
+
                                 else if key == "filename" {
                                     filename = val.as_str().unwrap_or_default().to_string();
                                     query_params.push((key.clone(), val.clone()));
+
+                                    filename_hash = format!("{:x}", md5::compute(&filename));
+                                    query_params.push(("filename_hash".to_string(), serde_json::Value::String(filename_hash)));
                                 }
                             }
 
-                            // Add the filename to the values
                             let mut values: Vec<Value> = Vec::new();
                             let mut columns: Vec<String> = Vec::new();
 
@@ -286,37 +357,49 @@ fn batchparse_database() -> Result<(), MainError> {
                                     },
                                 }
                             });
+                            
+                            //append the filename hash to the end
+                            // columns.push("filename_hash".to_string());
+                            // values.push(Value::from(
+                            //     query_params.iter()
+                            //         .find(|(k, _)| k == "filename_hash")
+                            //         .map(|(_, v)| v.as_str().unwrap())
+                            //         .unwrap_or("")
+                            // ));
 
                             // Add the filename to the columns and values
                             // columns.push("filename".to_string());
-                            // values.push(Value::from(filename.clone()));
+                            values.push(Value::from(filename.clone()));
 
                             let placeholders: Vec<String> = (1..=columns.len()).map(|_| "?".to_string()).collect();
 
                             // println!("Placeholder length: {}, columns length: {}", placeholders.len(), columns.len());
                             // println!("Values: {:?}\n, Columns: {:?}", values, columns);
 
+                            // let columns_str = columns.iter().map(|c| format!("`{}`", c)).collect::<Vec<String>>();
                             let query = format!(
                                 "INSERT INTO `{}` ({}) 
                                 SELECT {}
                                 WHERE NOT EXISTS (
                                     SELECT 1 FROM `{}`
-                                    WHERE `filename` = '{}'
+                                    WHERE `filename` = ?
                                 )",
                                 DB_TABLE_NAME,
                                 columns.join(", "),
                                 placeholders.join(", "),
                                 DB_TABLE_NAME,
-                                filename.replace("'", "''") // Escape single quotes in the filename
                             );
+
+                            // println!("{}", query.replace("\n", "").replace("    ", " "));
 
                             // Get a connection from the pool
                             let mut conn = pool.get_conn()?;
 
                             // Execute the query
                             match conn.exec_drop(query, values) {
-                                Ok(_) => println!("Successfully inserted data for file: {}", filename),
-                                Err(e) => eprintln!("Error inserting data for file {}: {}", filename, e),
+                                // Ok(_) => println!("Success: {}", filename),
+                                Ok(_) => (),
+                                Err(e) => eprintln!("Error on {}: {}", filename, e),
                             }
                         }
                     }
@@ -463,12 +546,31 @@ fn batchparse(processed_files: &mut HashSet<String>) -> Result<(), MainError> {
 }
 
 fn main() -> Result<(), MainError> {
-    let new_dir = Path::new("D:/parser/target/release/demos");
+
+    let new_dir = env::current_dir().unwrap().join("demos");
     env::set_current_dir(&new_dir).unwrap();
 
     let path = Path::new("all_demos.json");
     if !path.exists() {
         OpenOptions::new().write(true).create_new(true).open(path)?;
+    }
+
+    // Attempt to load .env file
+    match dotenv() {
+        Ok(_) => println!(".env file loaded successfully"),
+        Err(e) => eprintln!("Error loading .env file: {}", e),
+    }
+
+    // Read environment variables
+    match env::var("DB_HOST") {
+        Ok(host) => println!("DB_HOST: {}", host),
+        Err(e) => eprintln!("Error reading DB_HOST: {}", e),
+    }
+
+    // Optionally, you can try to read the file contents directly
+    match fs::read_to_string("/path/to/.env") {
+        Ok(contents) => println!(".env contents: {}", contents),
+        Err(e) => eprintln!("Error reading .env file: {}", e),
     }
 
     // let mut processed_files = HashSet::new();
