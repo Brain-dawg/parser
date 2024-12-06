@@ -1,3 +1,11 @@
+/*
+ * TODO
+ * =========
+ * - Skip JSON serialization for database
+ *     - This was copied over from the original function + easier to implement
+ */
+
+
 use std::env;
 use std::fs;
 use std::io;
@@ -212,15 +220,31 @@ fn batchparse_database() -> Result<(), MainError> {
                             let mut query_params = Vec::new();
                             
                             let mut filename = String::new();
-                            let mut filename_hash = String::new();
+                            // Generate filename_hash from the complete filename
+                            let filename_hash = if obj.contains_key("filename") {
+                                let fname = obj.get("filename")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("unknown")
+                                    .to_string();
+                                filename = fname.clone();
+                                // Ensure we're using the complete filename for hashing
+                                let digest = md5::compute(fname.as_bytes());
+                                let hash = format!("{:x}", digest);
+                                println!("Generated MD5 hash for '{}': {}", fname, hash);  // Debug print
+                                hash
+                            } else {
+                                let digest = md5::compute(b"unknown");
+                                let hash = format!("{:x}", digest);
+                                println!("Using default MD5 hash: {}", hash);  // Debug print
+                                hash
+                            };
 
-                            if obj.contains_key("filename") {
-                                
-                                filename = obj.get("filename").unwrap().as_str().unwrap().to_string();
-                                filename_hash = format!("{:x}", md5::compute(&filename));
-                            }
+                            // Debug prints to verify the complete data
+                            println!("Full filename: {}", filename);
+                            println!("Computed MD5 Hash: {}", filename_hash);
 
-                            let filename_hash_clone = filename_hash.clone();
+                            // query_params.push(("filename_hash".to_string(), serde_json::Value::String(filename_hash.clone())));
+
                             for (key, val) in obj {
 
                                 if key == "header" {
@@ -245,18 +269,15 @@ fn batchparse_database() -> Result<(), MainError> {
                                                 
                                                 let mut text_hash = String::new();
 
+                                                if let Some(text) = obj.get("text").and_then(|v| v.as_str()) {
+                                                    text_hash = format!("{:x}", md5::compute(text));
+                                                }
+
                                                 for &column in columns.iter() {
                                                     let value = match column {
                                                         "filename" => Value::from(filename.clone()),
-                                                        "filename_hash" => Value::from(filename_hash_clone.clone()),
-                                                        "text_hash" => {
-                                                            if text_hash.is_empty() {
-                                                                if let Some(text) = obj.get("text").and_then(|v| v.as_str()) {
-                                                                    text_hash = format!("{:x}", md5::compute(text));
-                                                                }
-                                                            }
-                                                            Value::from(text_hash.clone())
-                                                        },
+                                                        "filename_hash" => Value::from(filename_hash.clone()),
+                                                        "text_hash" => Value::from(text_hash.clone()),
                                                         _ => match obj.get(column) {
                                                             Some(serde_json::Value::String(s)) => Value::from(s.clone()),
                                                             Some(serde_json::Value::Number(n)) if column == "tick" => {
@@ -275,21 +296,16 @@ fn batchparse_database() -> Result<(), MainError> {
                                                 let columns_str = columns.iter().map(|c| format!("`{}`", c)).collect::<Vec<String>>();
                                                 let chat_query = format!(
                                                     "INSERT INTO {} ({}) 
-                                                    SELECT {}
-                                                    FROM DUAL
-                                                    WHERE NOT EXISTS (
-                                                        SELECT 1 FROM {}
-                                                        WHERE {}
-                                                    )",
+                                                    VALUES ({})
+                                                    ON DUPLICATE KEY UPDATE {}",
                                                     DB_CHAT_TABLE_NAME,
                                                     columns_str.join(", "),
                                                     placeholders.join(", "),
-                                                    DB_CHAT_TABLE_NAME,
-                                                    columns_str.iter().map(|c| format!("{} = ?", c)).collect::<Vec<String>>().join(" AND ")
+                                                    columns_str.iter().map(|c| format!("{0} = VALUES({0})", c)).collect::<Vec<String>>().join(", ")
                                                 );
 
-                                                let chat_values_copy = chat_values.clone();
-                                                chat_values.extend(chat_values_copy);
+                                                // let chat_values_copy = chat_values.clone();
+                                                // chat_values.extend(chat_values_copy);
 
                                                 // Get a connection from the pool
                                                 if let Ok(mut conn) = pool.get_conn() {
@@ -309,9 +325,6 @@ fn batchparse_database() -> Result<(), MainError> {
                                 else if key == "filename" {
                                     filename = val.as_str().unwrap_or_default().to_string();
                                     query_params.push((key.clone(), val.clone()));
-
-                                    filename_hash = format!("{:x}", md5::compute(&filename));
-                                    query_params.push(("filename_hash".to_string(), serde_json::Value::String(filename_hash)));
                                 }
                             }
 
@@ -359,47 +372,42 @@ fn batchparse_database() -> Result<(), MainError> {
                             });
                             
                             //append the filename hash to the end
-                            // columns.push("filename_hash".to_string());
-                            // values.push(Value::from(
-                            //     query_params.iter()
-                            //         .find(|(k, _)| k == "filename_hash")
-                            //         .map(|(_, v)| v.as_str().unwrap())
-                            //         .unwrap_or("")
-                            // ));
-
+                            columns.push("filename_hash".to_string());
+                            values.push(Value::from(filename_hash.clone()));
                             // Add the filename to the columns and values
                             // columns.push("filename".to_string());
-                            values.push(Value::from(filename.clone()));
+                            // values.push(Value::from(filename.clone()));
 
+                            let columns_str = columns.iter().map(|c| format!("`{}`", c)).collect::<Vec<String>>();
                             let placeholders: Vec<String> = (1..=columns.len()).map(|_| "?".to_string()).collect();
 
-                            // println!("Placeholder length: {}, columns length: {}", placeholders.len(), columns.len());
-                            // println!("Values: {:?}\n, Columns: {:?}", values, columns);
-
-                            // let columns_str = columns.iter().map(|c| format!("`{}`", c)).collect::<Vec<String>>();
                             let query = format!(
                                 "INSERT INTO `{}` ({}) 
-                                SELECT {}
-                                WHERE NOT EXISTS (
-                                    SELECT 1 FROM `{}`
-                                    WHERE `filename` = ?
-                                )",
+                                VALUES ({})
+                                ON DUPLICATE KEY UPDATE 
+                                filename_hash = VALUES(filename_hash)",
                                 DB_TABLE_NAME,
-                                columns.join(", "),
-                                placeholders.join(", "),
-                                DB_TABLE_NAME,
+                                columns_str.join(", "),
+                                placeholders.join(", ")
                             );
 
-                            // println!("{}", query.replace("\n", "").replace("    ", " "));
+                            // println!("Query: {}", query);  // Debug print
+                            // println!("Filename: {}", filename);  // Debug print
+                            // println!("Hash: {}", filename_hash);  // Debug print
 
                             // Get a connection from the pool
                             let mut conn = pool.get_conn()?;
 
-                            // Execute the query
-                            match conn.exec_drop(query, values) {
-                                // Ok(_) => println!("Success: {}", filename),
-                                Ok(_) => (),
-                                Err(e) => eprintln!("Error on {}: {}", filename, e),
+                            // Remove filename_hash from query_params if it exists
+                            // query_params.retain(|(key, _)| key != "filename_hash");
+
+                            // Ensure we're using Value::from with the complete hash string
+                            // values.push(Value::from(filename_hash.clone()));
+
+                            // Execute with explicit debug information
+                            match conn.exec_drop(query, values.clone()) {
+                                Ok(_) => println!("Successfully inserted record for {} with hash {}", filename, filename_hash),
+                                Err(e) => eprintln!("Error inserting {} (hash: {}): {}", filename, filename_hash, e),
                             }
                         }
                     }
