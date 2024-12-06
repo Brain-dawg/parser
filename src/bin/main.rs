@@ -230,7 +230,7 @@ fn batchparse_database() -> Result<(), MainError> {
                                 // Ensure we're using the complete filename for hashing
                                 let digest = md5::compute(fname.as_bytes());
                                 let hash = format!("{:x}", digest);
-                                println!("Generated MD5 hash for '{}': {}", fname, hash);  // Debug print
+                                // println!("Generated MD5 hash for '{}': {}", fname, hash);  // Debug print
                                 hash
                             } else {
                                 let digest = md5::compute(b"unknown");
@@ -240,8 +240,8 @@ fn batchparse_database() -> Result<(), MainError> {
                             };
 
                             // Debug prints to verify the complete data
-                            println!("Full filename: {}", filename);
-                            println!("Computed MD5 Hash: {}", filename_hash);
+                            // println!("Full filename: {}", filename);
+                            // println!("Computed MD5 Hash: {}", filename_hash);
 
                             // query_params.push(("filename_hash".to_string(), serde_json::Value::String(filename_hash.clone())));
 
