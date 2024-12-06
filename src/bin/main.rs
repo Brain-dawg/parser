@@ -295,13 +295,11 @@ fn batchparse_database() -> Result<(), MainError> {
 
                                                 let columns_str = columns.iter().map(|c| format!("`{}`", c)).collect::<Vec<String>>();
                                                 let chat_query = format!(
-                                                    "INSERT INTO {} ({}) 
-                                                    VALUES ({})
-                                                    ON DUPLICATE KEY UPDATE {}",
+                                                    "INSERT IGNORE INTO {} ({}) 
+                                                    VALUES ({})",
                                                     DB_CHAT_TABLE_NAME,
                                                     columns_str.join(", "),
-                                                    placeholders.join(", "),
-                                                    columns_str.iter().map(|c| format!("{0} = VALUES({0})", c)).collect::<Vec<String>>().join(", ")
+                                                    placeholders.join(", ")
                                                 );
 
                                                 // let chat_values_copy = chat_values.clone();
@@ -335,7 +333,7 @@ fn batchparse_database() -> Result<(), MainError> {
                                 match v {
                                     serde_json::Value::String(s) => {
                                         if key == "server" {
-                                            let re = Regex::new(r"Server #(\d+) \[(\w+)\]").unwrap();
+                                            let re = Regex::new(r"[Ss]erver #(\d+) \[(\w+)\]").unwrap();
                                             if let Some(caps) = re.captures(s) {
                                                 let server_id = caps.get(1).map_or("", |m| m.as_str());
                                                 let region = caps.get(2).map_or("", |m| m.as_str());
@@ -382,10 +380,8 @@ fn batchparse_database() -> Result<(), MainError> {
                             let placeholders: Vec<String> = (1..=columns.len()).map(|_| "?".to_string()).collect();
 
                             let query = format!(
-                                "INSERT INTO `{}` ({}) 
-                                VALUES ({})
-                                ON DUPLICATE KEY UPDATE 
-                                filename_hash = VALUES(filename_hash)",
+                                "INSERT IGNORE INTO `{}` ({}) 
+                                VALUES ({})",
                                 DB_TABLE_NAME,
                                 columns_str.join(", "),
                                 placeholders.join(", ")
