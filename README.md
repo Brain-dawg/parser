@@ -1,4 +1,1 @@
-# TF Demo Parser
-Fork of the demostf parser to batch parse many demos at once.
-
-TODO: add multithreaded parsing.
+Fork of demostf parser to recursively batch parse directories of zipped demos and recompress with xz -9
