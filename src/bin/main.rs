@@ -27,6 +27,8 @@ use tf_demo_parser::demo::header::Header;
 use tf_demo_parser::demo::parser::analyser::MatchState;
 use tf_demo_parser::{Demo, DemoParser};
 use log::{info, error};
+use zmq::{Context, Socket};
+use std::thread;
 
 
 #[derive(Serialize, Deserialize)]
@@ -54,13 +56,74 @@ struct HeaderWithFilename {
     header: Header,
 }
 
+
+fn distribute_compression(file_list: HashSet<String>) -> Result<(), MainError> {
+
+    // set up send/receive sockets for distribute jobs
+    let push_socket = env::var("PUSH_SOCKET").unwrap_or_else(|_| "6578".to_string()); // this language is retarded
+    let pull_socket = env::var("PULL_SOCKET").unwrap_or_else(|_| "6579".to_string());
+
+    let context = Context::new();
+
+
+    // Fetch worker list from GitHub
+    let worker_list_url = "https://raw.githubusercontent.com/potato-tf/deploy/main/serverlist.json";
+    let response = reqwest::blocking::get(worker_list_url)?.text()?;
+
+    let server_data: serde_json::Value = serde_json::from_str(&response)
+        .expect("Failed to parse JSON");
+
+    let mut worker_hosts = Vec::new();
+    if let Some(servers) = server_data["servers"].as_array() {
+        for server in servers {
+            if let Some(server_str) = server.as_str() {
+                // Parse "port user@host" format and extract just the host
+                let parts: Vec<&str> = server_str.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    let user_host = parts[1];
+                    if let Some(host) = user_host.split('@').nth(1) {
+                        worker_hosts.push(host.to_string());
+                    }
+                }
+            }
+        }
+    }
+    println!("Found {} worker hosts: {:?}", worker_hosts.len(), worker_hosts);
+    info!("Found {} worker hosts: {:?}", worker_hosts.len(), worker_hosts);
+
+    let sender = context.socket(zmq::PUSH).unwrap();
+    sender.connect(&format!("tcp://*:{}", push_socket));
+
+    let receiver = context.socket(zmq::PULL).unwrap();
+    receiver.connect(&format!("tcp://*:{}", pull_socket));
+
+    thread::spawn (move || {
+        loop {
+            let msg = receiver.recv_string(0).unwrap().unwrap();
+            println!("Completed compression for {}", msg)
+        }
+    });
+
+    for file in file_list {
+        println!("Sending compression job for {}", file);
+        info!("Sending compression job for {}", file);
+        let job = serde_json::json!({
+            "file": file,
+            "output": format!("{}.xz", file)
+        });
+        sender.send(&job.to_string(), 0).unwrap();
+    }
+
+    Ok(())
+}
+ 
 fn batchparse(processed_files: &mut HashSet<String>) -> Result<(), MainError> {
 
     let args: Vec<_> = env::args().collect();
     let all = args.contains(&std::string::String::from("all"));
     let main_dir = fs::read_dir(".")?;
     let mut parsed_files = HashMap::new();
-
+ 
     for entry in main_dir {
         let entry = match entry {
             Ok(entry) => entry,
@@ -71,11 +134,11 @@ fn batchparse(processed_files: &mut HashSet<String>) -> Result<(), MainError> {
 
         if path.is_dir() {
 
-            let file_path = "all_demos_new.json";
+            let file_path = format!("{}/all_demos_new.json", path.to_str().unwrap());
 
             info!("Parsing demos in {:?}", path);
             println!("Parsing demos in {:?}", path);
-            let mut output_file = File::create(file_path)?;
+            let mut output_file = File::create(&file_path)?;
             write!(output_file, "[")?;
 
             let subdir = match fs::read_dir(&path) {
@@ -164,14 +227,14 @@ fn batchparse(processed_files: &mut HashSet<String>) -> Result<(), MainError> {
                 }
             }
             
-            write!(output_file, "]")?;
+            write!(output_file, "]");
             // Generate timestamp
             let timestamp = SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap()
                 .as_secs();
             // Specify the directory where the zip file will be saved
-            let parsed_old_dir = PathBuf::from("parsed_old");
+            let parsed_old_dir = PathBuf::from(format!("{}/parsed_old", path.to_str().unwrap()));
             fs::create_dir_all(&parsed_old_dir)?; // Create the directory if it doesn't exist
 
             // Copy the current JSON file to the archive location with timestamp
@@ -203,38 +266,38 @@ fn batchparse(processed_files: &mut HashSet<String>) -> Result<(), MainError> {
             fs::rename(file_path, "all_demos.json")?;
         }
     }
-
-
-    // Compress parsed demos
-    info!("Compressing parsed demos...");
-    println!("Compressing parsed demos...");
-    for (_key, value) in &parsed_files {
-
-        let dem_path = PathBuf::from(value);
-        if !dem_path.exists() {
-            error!("Demo path does not exist (how?): {}", value);
-            continue;
-        }
-
-        let compression_level = env::var("DEM_COMPRESSION_LEVEL").unwrap_or_else(|_| "-9".to_string());
-
-        println!("Compressing demo {:?}", dem_path);
-        info!("Compressing demo {:?}", dem_path);
-        let output = std::process::Command::new("nice")
-            .arg("-n")
-            .arg("18")
-            .arg("xz")
-            .arg(compression_level)
-            .arg(dem_path)
-            .output()?;
-        if !output.status.success() {
-            let errmsg = String::from_utf8_lossy(&output.stderr);
-            error!("Failed to compress file: {}", errmsg);
-        }
-    }
-    println!("Done compressing parsed demos");
-    info!("Done compressing parsed demos");
     Ok(())
+ 
+ 
+     // Compress parsed demos
+     // info!("Compressing parsed demos...");
+     // println!("Compressing parsed demos...");
+     // for (_key, value) in &parsed_files {
+ 
+     //     let dem_path = PathBuf::from(value);
+     //     if !dem_path.exists() {
+     //         error!("Demo path does not exist (how?): {}", value);
+     //         continue;
+     //     }
+ 
+     //     let compression_level = env::var("DEM_COMPRESSION_LEVEL").unwrap_or_else(|_| "-9".to_string());
+ 
+     //     println!("Compressing demo {:?}", dem_path);
+     //     info!("Compressing demo {:?}", dem_path);
+     //     let output = std::process::Command::new("nice")
+     //         .arg("-n")
+     //         .arg("18")
+     //         .arg("xz")
+     //         .arg(compression_level)
+     //         .arg(dem_path)
+     //         .output()?;
+     //     if !output.status.success() {
+     //         let errmsg = String::from_utf8_lossy(&output.stderr);
+     //         error!("Failed to compress file: {}", errmsg);
+     //     }
+     // }
+     // println!("Done compressing parsed demos");
+     // info!("Done compressing parsed demos");
 }
 
 fn main() -> Result<(), MainError> {
@@ -252,7 +315,7 @@ fn main() -> Result<(), MainError> {
 
     let mut processed_files = HashSet::new();
     batchparse(&mut processed_files)?;
-    // batchparse_database_nojson()?;
+    distribute_compression(processed_files)?;
     Ok(())
 }
 
